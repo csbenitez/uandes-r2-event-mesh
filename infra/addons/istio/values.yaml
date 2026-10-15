@@ -1,0 +1,35 @@
+# ==============================================================================
+# Valores de Istio Ingress Gateway para K3s Local (k3d en Docker Desktop)
+# ==============================================================================
+
+global:
+  hub: docker.io/istio
+  tag: 1.24.2
+
+# En k3d, el servicio LoadBalancer se enlaza al K3s ServiceLB y expone puertos mapeados (8090/8443)
+service:
+  type: LoadBalancer
+  ports:
+    - name: status-port
+      port: 15021
+      protocol: TCP
+      targetPort: 15021
+    - name: http2
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 8443
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+autoscaling:
+  enabled: false

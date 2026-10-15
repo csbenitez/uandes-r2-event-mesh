@@ -1,0 +1,32 @@
+# Valores optimizados para Istio en Azure AKS (LoadBalancer gestionado por Azure)
+
+global:
+  hub: docker.io/istio
+  tag: 1.24.2
+
+# En AKS, el tipo LoadBalancer solicita una IP pública administrada por Azure con FQDN oficial
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: "voltera-dev-mesh"
+  ports:
+    - name: status-port
+      port: 15021
+      protocol: TCP
+      targetPort: 15021
+    - name: http2
+      port: 80
+      protocol: TCP
+      targetPort: 8080
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 8443
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

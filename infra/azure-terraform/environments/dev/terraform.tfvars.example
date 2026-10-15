@@ -1,0 +1,40 @@
+# ==============================================================================
+# Archivo de Variables de Ejemplo para Entorno Dev (Azure AKS)
+# Copia este archivo como 'terraform.tfvars' y completa tus valores específicos:
+#   cp terraform.tfvars.example terraform.tfvars
+# ==============================================================================
+
+# ID de la suscripción de Azure donde se desplegarán los recursos
+subscription_id     = "00000000-0000-0000-0000-000000000000"
+
+# Región primaria de Azure
+location            = "eastus2"
+
+# Nombre del Resource Group
+resource_group_name = "rg-voltera-dev"
+
+# Prefijo para la convención de nombres de recursos
+prefix              = "voltera-dev"
+
+# Tamaño de máquina virtual para el pool de nodos de AKS
+# Standard_B4ms: 4 vCPUs / 16 GB RAM (óptimo para soportar Istio + Knative a bajo costo)
+node_vm_size        = "Standard_B4ms"
+
+# Cantidad fija de nodos (FinOps: 1 nodo suficiente para desarrollo)
+node_count          = 1
+
+# Máximo número de pods por nodo (FinOps: 80 en un solo nodo con Azure CNI)
+max_pods            = 80
+
+# Cuota máxima diaria de ingesta en Log Analytics en GB (FinOps)
+daily_quota_gb      = 0.5
+
+# Etiquetas comunes para gobernanza y control de costos
+tags = {
+  ApplicationType = "Voltera"
+  Owner           = "tu-usuario"
+  Environment     = "dev"
+  Project         = "Voltera-EnergyTech"
+  ManagedBy       = "Terraform"
+  FinOpsTier      = "VS-Enterprise-Credit-Optimized"
+}

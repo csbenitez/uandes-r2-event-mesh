@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voltera-onprem
+  labels:
+    istio-injection: enabled
+---
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: onprem-broker
+  namespace: voltera-onprem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ami-mock-service
+  namespace: voltera-onprem
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ami-mock-service
+  template:
+    metadata:
+      labels:
+        app: ami-mock-service
+    spec:
+      containers:
+      - name: ami-mock
+        image: voltera/ami-mock:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: K_SINK
+          value: "http://broker-ingress.knative-eventing.svc.cluster.local/voltera-onprem/onprem-broker"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ami-mock-service
+  namespace: voltera-onprem
+spec:
+  selector:
+    app: ami-mock-service
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080

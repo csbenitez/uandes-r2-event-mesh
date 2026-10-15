@@ -1,0 +1,156 @@
+# Knative Event Mesh Configuration para la Región Cloud (AKS)
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: cloud-broker
+  namespace: voltera
+---
+# Trigger que reenvía eventos de lectura AMI al microservicio de Facturación (Billing)
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: trigger-billing-ami
+  namespace: voltera
+spec:
+  broker: cloud-broker
+  filter:
+    attributes:
+      type: com.voltera.ami.lectura_registrada
+  subscriber:
+    ref:
+      apiVersion: v1
+      kind: Service
+      name: billing-service
+    uri: /events
+---
+# Trigger que reenvía facturas generadas al microservicio de Pagos (Payment)
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: trigger-payment-invoice
+  namespace: voltera
+spec:
+  broker: cloud-broker
+  filter:
+    attributes:
+      type: com.voltera.billing.factura_generada
+  subscriber:
+    ref:
+      apiVersion: v1
+      kind: Service
+      name: payment-service
+    uri: /events
+---
+---
+# Consumidor de Eventos (Event Sink) para auditar y verificar CloudEvents en AKS
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-event-logger
+  namespace: voltera
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloud-event-logger
+  template:
+    metadata:
+      labels:
+        app: cloud-event-logger
+    spec:
+      containers:
+      - name: logger
+        image: gcr.io/knative-releases/knative.dev/eventing/cmd/event_display
+        resources:
+          requests:
+            cpu: 20m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud-event-logger
+  namespace: voltera
+spec:
+  selector:
+    app: cloud-event-logger
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+---
+# Trigger que entrega las lecturas AMI al consumidor de eventos logger en AKS
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: trigger-logger-ami
+  namespace: voltera
+spec:
+  broker: cloud-broker
+  filter:
+    attributes:
+      type: com.voltera.ami.lectura_registrada
+  subscriber:
+    ref:
+      apiVersion: v1
+      kind: Service
+      name: cloud-event-logger
+---
+# Enrutamiento de entrada en Istio para permitir que la región On-Premise envíe CloudEvents al Broker
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: cloud-eventmesh-gateway
+  namespace: voltera
+spec:
+  selector:
+    istio: ingress
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: voltera-ingress-cert
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: cloud-broker-ingress
+  namespace: voltera
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - cloud-eventmesh-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /events
+    rewrite:
+      uri: /voltera/cloud-broker
+    route:
+    - destination:
+        host: broker-ingress.knative-eventing.svc.cluster.local
+        port:
+          number: 80
+  - match:
+    - uri:
+        prefix: /kiali
+    route:
+    - destination:
+        host: kiali.istio-system.svc.cluster.local
+        port:
+          number: 20001

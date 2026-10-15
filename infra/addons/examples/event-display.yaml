@@ -1,0 +1,69 @@
+# 1. Consumidor de Eventos (Event Sink)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-display
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-display
+  template:
+    metadata:
+      labels:
+        app: event-display
+    spec:
+      containers:
+        - name: event-display
+          image: gcr.io/knative-releases/knative.dev/eventing/cmd/event_display
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: event-display
+  namespace: default
+spec:
+  selector:
+    app: event-display
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+# 2. Trigger de Knative Eventing: enruta eventos desde el Broker al consumidor
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: trigger-event-display
+  namespace: default
+spec:
+  broker: default
+  subscriber:
+    ref:
+      apiVersion: v1
+      kind: Service
+      name: event-display
+---
+# 3. Productor de eventos periódico (PingSource) para probar el flujo sin herramientas externas
+apiVersion: sources.knative.dev/v1
+kind: PingSource
+metadata:
+  name: test-ping-source
+  namespace: default
+spec:
+  schedule: "*/1 * * * *" # Cada minuto
+  contentType: "application/json"
+  data: '{"message": "Hola desde Knative Eventing en Voltera!"}'
+  sink:
+    ref:
+      apiVersion: eventing.knative.dev/v1
+      kind: Broker
+      name: default

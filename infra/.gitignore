@@ -1,0 +1,42 @@
+# ==============================================================================
+# Git Ignore para el directorio de Infraestructura
+# ==============================================================================
+
+# Terraform State y Caches
+.terraform/
+**/.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+*.tfplan.*
+tfplan
+crash.log
+
+# Terraform Variables Sensibles (Permitir únicamente templates de ejemplo)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.tfvars.example.json
+
+# Credenciales, Llaves y Certificados
+*.pem
+*.key
+*.pub
+*.crt
+*.pfx
+certs/
+id_rsa*
+id_ed25519*
+
+# Kubernetes Kubeconfig y Secretos Locales
+kubeconfig.yaml
+kubeconfig
+*.kubeconfig
+
+# Logs y Temporales del Sistema Operativo
+*.log
+.DS_Store
+Thumbs.db
+Desktop.ini

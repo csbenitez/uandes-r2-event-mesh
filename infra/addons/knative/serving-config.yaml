@@ -1,0 +1,22 @@
+# Configuración de red de Knative Serving para usar Istio como Ingress
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-network
+  namespace: knative-serving
+  labels:
+    app.kubernetes.io/part-of: knative-serving
+data:
+  ingress-class: "istio.ingress.networking.knative.dev"
+  auto-tls: "Disabled"
+---
+# Configuración de Features
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-features
+  namespace: knative-serving
+  labels:
+    app.kubernetes.io/part-of: knative-serving
+data:
+  kubernetes.podspec-fieldref: "enabled"

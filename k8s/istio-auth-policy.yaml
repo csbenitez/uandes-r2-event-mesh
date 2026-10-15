@@ -1,0 +1,13 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: voltera
+spec:
+  mtls:
+    # ESTO ES CLAVE PARA ZERO TRUST:
+    # STRICT significa que todo el tráfico en el namespace 'voltera'
+    # debe estar encriptado con mTLS obligatoriamente.
+    # Si un servicio intenta hablar por HTTP plano (sin pasar por un sidecar), 
+    # la conexión será rechazada por el proxy de destino.
+    mode: STRICT

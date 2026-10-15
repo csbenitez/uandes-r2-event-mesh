@@ -1,0 +1,18 @@
+# Configuración del canal por defecto para el Broker de Eventing (InMemoryChannel)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-ch-webhook
+  namespace: knative-eventing
+data:
+  default-ch-config: |
+    clusterDefault:
+      apiVersion: messaging.knative.dev/v1
+      kind: InMemoryChannel
+---
+# Broker de CloudEvents listo para usar en el namespace default
+apiVersion: eventing.knative.dev/v1
+kind: Broker
+metadata:
+  name: default
+  namespace: default

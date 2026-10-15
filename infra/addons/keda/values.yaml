@@ -1,0 +1,33 @@
+# ==============================================================================
+# Configuración de KEDA optimizada para laboratorio y bajo consumo de recursos
+# ==============================================================================
+operator:
+  name: keda-operator
+  resources:
+    operator:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 192Mi
+    metricServer:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 192Mi
+    webhooks:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+
+# Compatible con arquitecturas x86_64 y ARM64 (Apple Silicon / Intel / AMD)
+image:
+  pullPolicy: IfNotPresent

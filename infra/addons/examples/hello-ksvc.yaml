@@ -1,0 +1,29 @@
+# Ejemplo Knative Serving: Servicio Serverless con Scale-to-Zero
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hello
+  namespace: default
+spec:
+  template:
+    metadata:
+      annotations:
+        # Escalar a 0 pods tras 30 segundos sin peticiones
+        autoscaling.knative.dev/scale-to-zero-pod-retention-period: "30s"
+        # Máximo de réplicas permitidas en el laboratorio
+        autoscaling.knative.dev/max-scale: "3"
+    spec:
+      containers:
+        - image: gcr.io/knative-samples/helloworld-go
+          ports:
+            - containerPort: 8080
+          env:
+            - name: TARGET
+              value: "Voltera Event Mesh & KEDA Lab"
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi

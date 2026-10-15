@@ -1,0 +1,43 @@
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+tfplan
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Terraform sensitive variables
+*.tfvars
+!*.tfvars.example
+
+# Kubernetes / Local secrets
+*.kubeconfig
+kubeconfig.yaml
+kubeconfig
+*.key
+*.crt
+*.pem
+*.pfx
+certs/
+
+# Go compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+src/services/billing-service/billing-service
+src/services/payment-service/payment-service
+mock-onprem/mock-service
+mock-onprem/mock-onprem
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

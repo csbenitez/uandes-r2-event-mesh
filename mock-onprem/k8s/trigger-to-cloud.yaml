@@ -1,0 +1,39 @@
+# Trigger de Knative en On-Premise que filtra eventos de telemetría AMI
+# y los reenvía automáticamente al Ingress de Azure AKS mediante canal seguro HTTPS / TLS
+apiVersion: eventing.knative.dev/v1
+kind: Trigger
+metadata:
+  name: trigger-forward-ami-to-cloud
+  namespace: voltera-onprem
+spec:
+  broker: onprem-broker
+  filter:
+    attributes:
+      type: com.voltera.ami.lectura_registrada
+  subscriber:
+    uri: "https://voltera-dev-mesh.eastus2.cloudapp.azure.com/events"
+    CACerts: |
+      -----BEGIN CERTIFICATE-----
+      MIIEGzCCAwOgAwIBAgIUZZl7oXWhOzniswL4YCi2Wpts6VQwDQYJKoZIhvcNAQEL
+      BQAwfzELMAkGA1UEBhMCQ08xDzANBgNVBAgMBkJvZ290YTEPMA0GA1UEBwwGQm9n
+      b3RhMRcwFQYDVQQKDA5Wb2x0ZXJhIEVuZXJneTEcMBoGA1UECwwTU2VjdXJpdHkg
+      WmVybyBUcnVzdDEXMBUGA1UEAwwONTcuMTY2LjEzMS4xMTkwHhcNMjYxMDE1MDIy
+      OTUyWhcNMjcxMDE1MDIyOTUyWjB/MQswCQYDVQQGEwJDTzEPMA0GA1UECAwGQm9n
+      b3RhMQ8wDQYDVQQHDAZCb2dvdGExFzAVBgNVBAoMDlZvbHRlcmEgRW5lcmd5MRww
+      GgYDVQQLDBNTZWN1cml0eSBaZXJvIFRydXN0MRcwFQYDVQQDDA41Ny4xNjYuMTMx
+      LjExOTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOXDhRMrsA43R9AW
+      G1YJQstK6ziDtO8fZRn0TsusJsLlG/SL/9H6ASiNJEQNg5fWOfkCy90nweGWen7e
+      M7kVpsCEOx6DTAJ7nMoFDJiXdgwdXMSmEMK1Z00SkkSYQhoix6XVOm/44pl3djcu
+      tWmpDZhU+ye4glBtWUejigoRIDyadcJmBcoicdD7MzPPzaC5ErWGx+mHFBmt6dbJ
+      ce2IyfLC+3k2RB04EbCs7JjXJHDiN3r/YEmHOJGyrv+YZaxMhNiTHYxJ/n3+uHrq
+      RkXUmvXE89Tmvs3bBNgjo1tZo+Zr9+gKBbijcM7Jr6M2AhEI04OFLlGlilrnHC/3
+      0k3q7qcCAwEAAaOBjjCBizAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYB
+      BQUHAwEwRQYDVR0RBD4wPIcEOaaDd4cEfwAAAYIXNTcuMTY2LjEzMS4xMTkuc3Ns
+      aXAuaW+CCiouc3NsaXAuaW+CCWxvY2FsaG9zdDAdBgNVHQ4EFgQU0ouz+p4n6UP3
+      A7RLMIpBeeqK3iwwDQYJKoZIhvcNAQELBQADggEBAH2cGwsgu50QwfUXqbBEnULg
+      8pNzKgawnHmWotAHIYqwjVhcpZWpCKno9GJUudgJoffEDovAZjY/WA8qj2uaiKrp
+      fNpkLj7NuNWPJiFV1Il7BinrhmZnM5Kt3X7srbDReueQ8FrX6Fw2OZMR2vDbL6m3
+      7dExdhtQKggYZS2aCzMPjwwuMMRuYQ4cMxqHPHBqSDpMQ5Uy6TjRuS+u44Puz5UV
+      Tq4Qpjp4GKRbsouOsRzflGHOmtq3MXr+DfItv1r6IlvGJrXq/RM1W7hJcpYFfMw/
+      SfLPJh0pcrDoT/lESuxUFlD+OLOX4Z3jPs2KKZnN+JJaElLEBa01sO+RbvFttAE=
+      -----END CERTIFICATE-----

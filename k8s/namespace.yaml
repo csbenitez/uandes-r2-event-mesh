@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: voltera
+  labels:
+    # ESTO ES CLAVE: Le dice al Control Plane de Istio que inyecte 
+    # un Sidecar (Envoy Proxy) en cada Pod que se cree en este namespace.
+    istio-injection: enabled

@@ -1,0 +1,228 @@
+@startuml
+!pragma layout elk
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 12
+skinparam ranksep 18
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam wrapWidth 220
+
+skinparam package {
+  BorderColor #343A40
+  FontStyle bold
+}
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #495057
+}
+
+title Domain-Driven Design (DDD) - Voltera Energytech Ecosystem\nBounded Contexts, Agregados, Entidades y Value Objects
+
+top to bottom direction
+
+' ===============================================================================
+' BOUNDED CONTEXT 1: TELEMETRÍA E INGESTA AMI
+' ===============================================================================
+package "Telemetry & Ingestion Context" as BC_Telemetry <<Bounded Context>> #EBF5FB {
+
+    package "Agregado: LecturaAMI" as AGG_Lectura #D4E6F1 {
+        class LecturaAMI <<Aggregate Root>> {
+            +LecturaId id
+            +NIU niu
+            +MedidorSerie medidor
+            +TimestampUTC timestamp
+            +Intervalo intervalo
+            +TensionVoltios tension
+            +EstadoVEE estadoVEE
+            +validarLectura()
+            +marcarAlertaTamper()
+        }
+        class RegistroIntervalo <<Entity>> {
+            +IntervaloId id
+            +ImpKWh importacion
+            +ExcKWh exportacion
+        }
+        class LecturaId <<Value Object>>
+        class NIU <<Value Object>>
+        class MedidorSerie <<Value Object>>
+        class EstadoVEE <<Value Object>>
+
+        LecturaAMI "1" *-- "1..*" RegistroIntervalo
+        LecturaAMI o-- LecturaId
+        LecturaAMI o-- NIU
+        LecturaAMI o-- MedidorSerie
+        LecturaAMI o-- EstadoVEE
+    }
+
+    package "Agregado: DispositivoMedidor" as AGG_Medidor #D4E6F1 {
+        class DispositivoMedidor <<Aggregate Root>> {
+            +MedidorId id
+            +ProtocoloDLMS protocolo
+            +CanalAPN apn
+            +EstadoOperativo estado
+            +LlaveCriptografica llave
+            +actualizarFirmware()
+        }
+        class PuertoComunicacion <<Entity>> {
+            +PuertoId id
+            +TipoTipoPuerto tipo
+        }
+        DispositivoMedidor "1" *-- "1..*" PuertoComunicacion
+    }
+
+    package "Agregado: LoteIngestaOR" as AGG_Lote #D4E6F1 {
+        class LoteIngestaOR <<Aggregate Root>> {
+            +LoteId id
+            +CodigoOR codigoOR
+            +ChecksumMD5 checksum
+            +FechaIngesta fecha
+            +CantidadRegistros total
+            +procesarLote()
+        }
+        class ArchivoLote <<Entity>> {
+            +ArchivoId id
+            +NombreArchivo nombre
+            +FormatoEnum formato
+        }
+        LoteIngestaOR "1" *-- "1" ArchivoLote
+    }
+}
+
+' ===============================================================================
+' BOUNDED CONTEXT 2: MOTOR P2P Y COMUNIDADES ENERGÉTICAS
+' ===============================================================================
+package "P2P & Community Matching Context" as BC_P2P <<Bounded Context>> #EAFAF1 {
+
+    package "Agregado: ComunidadEnergética" as AGG_Comunidad #D5F5E3 {
+        class "ComunidadEnergética" as ComunidadEnergetica <<Aggregate Root>> {
+            +ComunidadId id
+            +CodigoRUCE ruce
+            +MatrizPDE matrizPDE
+            +validarInvariantePDE()
+            +asignarMiembro()
+        }
+        class MiembroComunidad <<Entity>> {
+            +MiembroId id
+            +NIU niu
+            +RolMiembro rol
+            +PDE Porcentaje
+        }
+        class MatrizPDE <<Value Object>> {
+            +Decimal sumaPDE = 100%%
+        }
+        ComunidadEnergetica "1" *-- "1..*" MiembroComunidad
+        ComunidadEnergetica o-- MatrizPDE
+    }
+
+    package "Agregado: EmparejamientoP2P" as AGG_Match #D5F5E3 {
+        class OfertaDemandaMatch <<Aggregate Root>> {
+            +MatchId id
+            +IntervaloTiempo intervalo
+            +NIUGenerador generador
+            +NIUBeneficiario beneficiario
+            +KWhAsignados volumen
+            +TarifaP2P tarifa
+            +ejecutarEmparejamiento()
+        }
+        class TrancheEnergia <<Entity>> {
+            +TrancheId id
+            +BloqueKWh volumen
+        }
+        OfertaDemandaMatch "1" *-- "1..*" TrancheEnergia
+    }
+
+    package "Agregado: CertificadoOrigenRenovable" as AGG_Cert #D5F5E3 {
+        class CertificadoOrigen <<Aggregate Root>> {
+            +CertificadoId id
+            +VolumenKWh volumen
+            +FechaGeneracion fecha
+            +EstadoCertificado estado
+            +emitirToken()
+            +redimirToken()
+        }
+        class TokenBlockchain <<Entity>> {
+            +TokenId id
+            +HashOnChain txHash
+        }
+        CertificadoOrigen "1" *-- "1" TokenBlockchain
+    }
+}
+
+' ===============================================================================
+' BOUNDED CONTEXT 3: LIQUIDACIÓN Y FACTURACIÓN NET-METERING
+' ===============================================================================
+package "Billing & Settlement Context" as BC_Billing <<Bounded Context>> #FEF9E7 {
+
+    package "Agregado: FacturaEnergia" as AGG_Factura #FCF3CF {
+        class FacturaEnergia <<Aggregate Root>> {
+            +FacturaId id
+            +PeriodoFacturacion periodo
+            +ImpAcumuladoKWh imp
+            +Exc1KWh exc1_permuta
+            +Exc2KWh exc2_sobrante
+            +ValorNetoVE valorCOP
+            +calcularLiquidacionCREG101072()
+        }
+        class ItemFactura <<Entity>> {
+            +ItemId id
+            +ConceptoEnum concepto
+            +ValorCOP valor
+        }
+        class DetalleNetting <<Entity>> {
+            +NettingId id
+            +KWhPermutados1to1 kwh
+        }
+        FacturaEnergia "1" *-- "1..*" ItemFactura
+        FacturaEnergia "1" *-- "1" DetalleNetting
+    }
+
+    package "Agregado: CuentaComercialUsuario" as AGG_Cuenta #FCF3CF {
+        class CuentaComercial <<Aggregate Root>> {
+            +CuentaId id
+            +NIU niu
+            +EstadoCuenta estado
+            +SaldoAFavor saldo
+            +abonarSaldoExcedente()
+            +emitirOrdenCorteReconexion()
+        }
+        class TransaccionSaldo <<Entity>> {
+            +TransaccionId id
+            +MontoCOP monto
+            +TipoMovimiento tipo
+        }
+        class OrdenServicio <<Entity>> {
+            +OrdenId id
+            +TipoOrden tipo
+        }
+        CuentaComercial "1" *-- "0..*" TransaccionSaldo
+        CuentaComercial "1" *-- "0..*" OrdenServicio
+    }
+
+    package "Agregado: EstructuraTarifaria" as AGG_Tarifa #FCF3CF {
+        class EstructuraTarifaria <<Aggregate Root>> {
+            +TarifaId id
+            +MercadoComercializacion mercado
+            +CostoUnitarioCU cu
+            +CostoMedioMc mc
+            +MargenCv cv
+            +actualizarTarifasMes()
+        }
+        class ComponenteCosto <<Entity>> {
+            +ComponenteId id
+            +NombreComponente nombre
+            +ValorUnitario valor
+        }
+        EstructuraTarifaria "1" *-- "1..*" ComponenteCosto
+    }
+}
+
+' ===============================================================================
+' CONTEXT MAPPING (RELACIONES ENTRE BOUNDED CONTEXTS)
+' Los alias evitan que "&" rompa el enlace al exportar.
+' ===============================================================================
+BC_Telemetry -down-> BC_P2P : Upstream / Downstream\n[Anti-Corruption Layer (ACL)]
+BC_Telemetry -down-> BC_Billing : Upstream / Downstream\n[Anti-Corruption Layer (ACL)]
+BC_P2P -down-> BC_Billing : Supplier / Customer\n[Asignación de Excedentes P2P]
+
+@enduml
