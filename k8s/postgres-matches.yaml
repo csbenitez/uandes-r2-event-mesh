@@ -1,0 +1,123 @@
+# PostgreSQL para persistencia de matches e idempotencia
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: voltera
+data:
+  init.sql: |
+    -- Tabla de matches (resultado del emparejamiento P2P)
+    CREATE TABLE IF NOT EXISTS matches (
+        match_id VARCHAR(255) PRIMARY KEY,
+        prosumer_id VARCHAR(100) NOT NULL,
+        consumer_id VARCHAR(100) NOT NULL,
+        kwh_matched DECIMAL(10,2) NOT NULL,
+        price_cop DECIMAL(10,2) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        CONSTRAINT unique_match_id UNIQUE (match_id)
+    );
+
+    -- Tabla de eventos procesados (registro de idempotencia)
+    CREATE TABLE IF NOT EXISTS processed_events (
+        idempotency_key VARCHAR(255) PRIMARY KEY,
+        event_type VARCHAR(100) NOT NULL,
+        processed_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Índice para limpieza eficiente
+    CREATE INDEX IF NOT EXISTS idx_processed_at ON processed_events(processed_at);
+
+    -- Función de limpieza automática (retention 7 días)
+    CREATE OR REPLACE FUNCTION cleanup_old_events()
+    RETURNS void AS $$
+    BEGIN
+        DELETE FROM processed_events 
+        WHERE processed_at < NOW() - INTERVAL '7 days';
+    END;
+    $$ LANGUAGE plpgsql;
+
+    -- Trigger o job externo puede llamar a cleanup_old_events() periódicamente
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-matches
+  namespace: voltera
+  labels:
+    app: postgres-matches
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: postgres-matches
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-matches
+  namespace: voltera
+  labels:
+    app: postgres-matches
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-matches
+  template:
+    metadata:
+      labels:
+        app: postgres-matches
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: "voltera_matches"
+        - name: POSTGRES_USER
+          value: "voltera"
+        - name: POSTGRES_PASSWORD
+          value: "voltera_pass"
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - voltera
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - voltera
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-init
+      - name: postgres-storage
+        emptyDir: {}

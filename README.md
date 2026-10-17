@@ -282,8 +282,9 @@ nuevagen/
 │       ├── install.ps1       # Script de instalación unificada (Azure / Local) en PowerShell
 │       └── install.sh        # Script de instalación unificada (Azure / Local) en Bash
 └── docs/                     # Documentación técnica, modelos y diseño de arquitectura
-    ├── EVENT_MESH.md         # 📡 Guía completa y especificación técnica del Event Mesh
-    ├── FINOPS_AKS.md         # 💰 Manual de FinOps y control On/Off de AKS en Dev
+    ├── EVENT_MESH.md              # 📡 Guía completa y especificación técnica del Event Mesh
+    ├── FINOPS_AKS.md              # 💰 Manual de FinOps y control On/Off de AKS en Dev
+    ├── IDEMPOTENCY_EXPERIMENT.md  # Experimento de Idempotencia (Material ARTI4208)
     ├── architecture/         # Modelos ArchiMate organizados (.archimate)
     │   ├── voltera.archimate
     │   └── voltera_bk.archimate
@@ -295,6 +296,59 @@ nuevagen/
     ├── Voltera_ARTI4208_Proyecto.md
     └── Voltera_ARTI4208_Proyecto.pdf
 ```
+
+---
+
+## Experimento de Idempotencia
+
+Este repositorio incluye un **experimento de idempotencia** que demuestra cómo implementar procesamiento idempotente en arquitecturas dirigidas por eventos, siguiendo los principios del material ARTI4208 de Universidad de los Andes.
+
+### Objetivo del Experimento
+Demostrar que un sistema puede procesar eventos duplicados (10% del total) y garantizar que cada `matchId` único se procese **una sola vez**, sin consultas síncronas al productor.
+
+### Quick Start
+
+```bash
+# 1. Validar prerequisitos
+./scripts/idempotency/validate-setup.sh
+
+# 2. Desplegar infraestructura
+./scripts/idempotency/deploy-idempotency-lab.sh
+
+# 3. Ejecutar demo completo
+./scripts/idempotency/demo-idempotency.sh
+```
+
+**Resultado esperado**: 900 eventos únicos procesados de 1000 enviados, 0 duplicados en base de datos.
+
+### Documentación
+- 📖 **Documentación completa**: [docs/IDEMPOTENCY_EXPERIMENT.md](docs/IDEMPOTENCY_EXPERIMENT.md)
+- ⚡ **Quick start**: [docs/QUICKSTART_IDEMPOTENCY.md](docs/QUICKSTART_IDEMPOTENCY.md)
+- 🧪 **Test de idempotencia**: [tests/04_idempotency_test.js](tests/04_idempotency_test.js)
+
+### Arquitectura del Experimento
+
+```
+Test k6 (1000 eventos: 900 únicos + 100 duplicados)
+           ↓
+    Knative Event Mesh
+           ↓
+  match-processor Service
+  ✓ Deduplicación por matchId
+  ✓ Caché Redis (fast path)
+  ✓ PostgreSQL (persistent path)
+  ✓ Transacción atómica
+           ↓
+  PostgreSQL: 900 registros únicos ✅
+```
+
+### Criterios de Éxito
+- ✅ Un solo efecto por `matchId`
+- ✅ 0 duplicados en estado final
+- ✅ Procesamiento autónomo (sin consultas síncronas)
+- ✅ Conforme a material ARTI4208 UniAndes
+
+
 
 ---
 
