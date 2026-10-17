@@ -138,6 +138,14 @@ spec:
   http:
   - match:
     - uri:
+        prefix: /.well-known/acme-challenge/
+    route:
+    - destination:
+        host: cert-manager-solver.istio-system.svc.cluster.local
+        port:
+          number: 8089
+  - match:
+    - uri:
         prefix: /events
     rewrite:
       uri: /voltera/cloud-broker
