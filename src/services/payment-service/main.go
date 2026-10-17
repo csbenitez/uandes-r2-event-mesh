@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +36,45 @@ type FacturaEvent struct {
 	Status         string  `json:"status"`
 }
 
+type ProcessedPayment struct {
+	TransactionID string  `json:"transaction_id"`
+	InvoiceID     string  `json:"invoice_id"`
+	NIU           string  `json:"niu"`
+	Amount        float64 `json:"amount"`
+	Status        string  `json:"status"`
+	ProcessedAt   string  `json:"processed_at"`
+}
+
+// Estructuras y cliente para observabilidad OpenTelemetry / Zipkin
+type TraceContext struct {
+	TraceID  string
+	SpanID   string
+	ParentID string
+}
+
+type ZipkinEndpoint struct {
+	ServiceName string `json:"serviceName"`
+}
+
+type ZipkinSpan struct {
+	TraceID       string            `json:"traceId"`
+	ID            string            `json:"id"`
+	ParentID      string            `json:"parentId,omitempty"`
+	Name          string            `json:"name"`
+	Kind          string            `json:"kind,omitempty"`
+	Timestamp     int64             `json:"timestamp"`
+	Duration      int64             `json:"duration"`
+	LocalEndpoint ZipkinEndpoint    `json:"localEndpoint"`
+	Tags          map[string]string `json:"tags,omitempty"`
+}
+
+var (
+	historyMutex   sync.RWMutex
+	recentPayments = make([]ProcessedPayment, 0)
+	totalProcessed int
+	zipkinClient   = &http.Client{Timeout: 2 * time.Second}
+)
+
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
@@ -38,17 +82,119 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Ce-Specversion, Ce-Type, Ce-Source, Ce-Id, Ce-Time, Traceparent, X-B3-TraceId, X-B3-SpanId, X-B3-Sampled")
+}
+
+func getOrGenerateHex(bytesLen int) string {
+	b := make([]byte, bytesLen)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+func extractTraceContext(r *http.Request) TraceContext {
+	tp := r.Header.Get("traceparent")
+	if tp == "" {
+		tp = r.Header.Get("Traceparent")
+	}
+	if tp == "" {
+		tp = r.Header.Get("Ce-Traceparent")
+	}
+
+	var traceID, parentID string
+	if tp != "" {
+		parts := strings.Split(tp, "-")
+		if len(parts) >= 3 && len(parts[1]) == 32 {
+			traceID = parts[1]
+			parentID = parts[2]
+		}
+	}
+
+	if traceID == "" {
+		b3Trace := r.Header.Get("x-b3-traceid")
+		if b3Trace != "" {
+			traceID = b3Trace
+			parentID = r.Header.Get("x-b3-spanid")
+		}
+	}
+
+	if traceID == "" {
+		traceID = getOrGenerateHex(16)
+	}
+
+	spanID := getOrGenerateHex(8)
+
+	return TraceContext{
+		TraceID:  traceID,
+		SpanID:   spanID,
+		ParentID: parentID,
+	}
+}
+
+func emitSpan(serviceName, spanName string, tc TraceContext, start time.Time, tags map[string]string) {
+	zipkinURL := getEnv("OTEL_ZIPKIN_URL", "http://otel-collector.istio-system.svc.cluster.local:9411/api/v2/spans")
+	if zipkinURL == "none" || zipkinURL == "" {
+		return
+	}
+
+	durationMicros := time.Since(start).Microseconds()
+	timestampMicros := start.UnixNano() / 1000
+
+	span := ZipkinSpan{
+		TraceID:   tc.TraceID,
+		ID:        tc.SpanID,
+		ParentID:  tc.ParentID,
+		Name:      spanName,
+		Kind:      "SERVER",
+		Timestamp: timestampMicros,
+		Duration:  durationMicros,
+		LocalEndpoint: ZipkinEndpoint{
+			ServiceName: serviceName,
+		},
+		Tags: tags,
+	}
+
+	payload, err := json.Marshal([]ZipkinSpan{span})
+	if err != nil {
+		return
+	}
+
+	go func(body []byte) {
+		req, err := http.NewRequest("POST", zipkinURL, bytes.NewBuffer(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := zipkinClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}(payload)
+}
+
 // eventsHandler procesa CloudEvents recibidos desde Knative Event Mesh (trigger-payment-invoice)
 func eventsHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	start := time.Now()
+	tc := extractTraceContext(r)
+
 	ceType := r.Header.Get("Ce-Type")
 	ceID := r.Header.Get("Ce-Id")
 	ceSource := r.Header.Get("Ce-Source")
-	log.Printf("[PAYMENT EVENT] CloudEvent recibido: ID=%s Type=%s Source=%s", ceID, ceType, ceSource)
+	log.Printf("[PAYMENT EVENT] CloudEvent recibido: ID=%s Type=%s Source=%s Trace=%s", ceID, ceType, ceSource, tc.TraceID)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -65,35 +211,64 @@ func eventsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		txnID := fmt.Sprintf("TXN-MESH-%d", time.Now().UnixNano()/1000000)
+		nowStr := time.Now().UTC().Format(time.RFC3339)
 		log.Printf("[PAYMENT] Cobro y dispersion exitosa para Factura %s (NIU %s) por valor $%.2f COP | Txn: %s",
 			factura.InvoiceID, factura.NIU, factura.TotalCOP, txnID)
 
-		res := map[string]interface{}{
-			"status":         "SUCCESS",
-			"transaction_id": txnID,
-			"invoice_id":     factura.InvoiceID,
-			"niu":            factura.NIU,
-			"amount_charged": factura.TotalCOP,
-			"message":        "Pago y dispersion procesados satisfactoriamente via Event Mesh",
-			"timestamp":      time.Now().UTC().Format(time.RFC3339),
+		p := ProcessedPayment{
+			TransactionID: txnID,
+			InvoiceID:     factura.InvoiceID,
+			NIU:           factura.NIU,
+			Amount:        factura.TotalCOP,
+			Status:        "SUCCESS",
+			ProcessedAt:   nowStr,
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		historyMutex.Lock()
+		totalProcessed++
+		recentPayments = append([]ProcessedPayment{p}, recentPayments...)
+		if len(recentPayments) > 50 {
+			recentPayments = recentPayments[:50]
+		}
+		historyMutex.Unlock()
+
+		// Emitir span a Application Insights con tags de negocio
+		tags := map[string]string{
+			"ce.id":                  ceID,
+			"ce.type":                ceType,
+			"ce.source":              ceSource,
+			"http.method":            "POST",
+			"http.status_code":       "200",
+			"voltera.event":          "billing.factura_generada",
+			"voltera.niu":            factura.NIU,
+			"voltera.invoice_id":     factura.InvoiceID,
+			"voltera.total_cop":      fmt.Sprintf("%.2f", factura.TotalCOP),
+			"voltera.transaction_id": txnID,
+			"voltera.payment_status": "SUCCESS",
+		}
+		emitSpan("payment-service", "payment.process_invoice_event", tc, start, tags)
+
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(res)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ignored","reason":"unsupported event type"}`))
 }
 
 // processPaymentHandler atiende llamadas sincronas directas
 func processPaymentHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	start := time.Now()
+	tc := extractTraceContext(r)
 
 	var req PaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -102,8 +277,8 @@ func processPaymentHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	txnID := fmt.Sprintf("TXN-%d", time.Now().UnixNano()/1000000)
-	log.Printf("[PAYMENT SYNC] Recibida solicitud de pago para cuenta %s por valor %.2f | Txn: %s",
-		req.AccountID, req.Amount, txnID)
+	log.Printf("[PAYMENT SYNC] Recibida solicitud de pago para cuenta %s por valor %.2f | Txn: %s | Trace: %s",
+		req.AccountID, req.Amount, txnID, tc.TraceID)
 
 	res := PaymentResponse{
 		Status:        "SUCCESS",
@@ -111,30 +286,51 @@ func processPaymentHandler(w http.ResponseWriter, r *http.Request) {
 		Message:       fmt.Sprintf("Pago de %.2f procesado correctamente", req.Amount),
 	}
 
+	tags := map[string]string{
+		"http.method":            "POST",
+		"http.status_code":       "200",
+		"voltera.account_id":     req.AccountID,
+		"voltera.amount_cop":     fmt.Sprintf("%.2f", req.Amount),
+		"voltera.transaction_id": txnID,
+		"voltera.payment_status": "SUCCESS",
+	}
+	emitSpan("payment-service", "payment.process_payment_sync", tc, start, tags)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "healthy",
-		"service": "payment-service",
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "healthy",
+		"service":   "payment-service",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+	historyMutex.RLock()
+	defer historyMutex.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"service":         "payment-service",
+		"total_processed": totalProcessed,
+		"recent_payments": recentPayments,
 	})
 }
 
 func main() {
 	port := getEnv("PORT", "8081")
 
-	// Endpoint sincrono REST
 	http.HandleFunc("/process", processPaymentHandler)
-
-	// Endpoint asincrono Knative Event Mesh (CloudEvents)
 	http.HandleFunc("/events", eventsHandler)
-
-	// Probe de salud para Kubernetes
 	http.HandleFunc("/health", healthHandler)
+	http.HandleFunc("/stats", statsHandler)
 
 	log.Printf("Payment Service (Pagos) iniciando en el puerto :%s...", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {

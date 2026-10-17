@@ -41,13 +41,15 @@ spec:
       name: payment-service
     uri: /events
 ---
----
 # Consumidor de Eventos (Event Sink) para auditar y verificar CloudEvents en AKS
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cloud-event-logger
   namespace: voltera
+  labels:
+    app: cloud-event-logger
+    version: v1
 spec:
   replicas: 1
   selector:
@@ -57,13 +59,19 @@ spec:
     metadata:
       labels:
         app: cloud-event-logger
+        version: v1
+        sidecar.istio.io/inject: "true"
+      annotations:
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "64Mi"
     spec:
       containers:
       - name: logger
         image: gcr.io/knative-releases/knative.dev/eventing/cmd/event_display
         resources:
           requests:
-            cpu: 20m
+            cpu: 10m
             memory: 32Mi
           limits:
             cpu: 100m
@@ -74,11 +82,15 @@ kind: Service
 metadata:
   name: cloud-event-logger
   namespace: voltera
+  labels:
+    app: cloud-event-logger
+    version: v1
 spec:
   selector:
     app: cloud-event-logger
   ports:
-  - protocol: TCP
+  - name: http
+    protocol: TCP
     port: 80
     targetPort: 8080
 ---
@@ -154,6 +166,58 @@ spec:
         host: broker-ingress.knative-eventing.svc.cluster.local
         port:
           number: 80
+    corsPolicy:
+      allowOrigins:
+      - regex: ".*"
+      allowMethods:
+      - POST
+      - GET
+      - OPTIONS
+      allowHeaders:
+      - "Content-Type"
+      - "Ce-Specversion"
+      - "Ce-Type"
+      - "Ce-Source"
+      - "Ce-Id"
+      - "Ce-Time"
+  - match:
+    - uri:
+        prefix: /api/billing/
+    rewrite:
+      uri: /
+    route:
+    - destination:
+        host: billing-service.voltera.svc.cluster.local
+        port:
+          number: 8080
+    corsPolicy:
+      allowOrigins:
+      - regex: ".*"
+      allowMethods:
+      - POST
+      - GET
+      - OPTIONS
+      allowHeaders:
+      - "*"
+  - match:
+    - uri:
+        prefix: /api/payment/
+    rewrite:
+      uri: /
+    route:
+    - destination:
+        host: payment-service.voltera.svc.cluster.local
+        port:
+          number: 8081
+    corsPolicy:
+      allowOrigins:
+      - regex: ".*"
+      allowMethods:
+      - POST
+      - GET
+      - OPTIONS
+      allowHeaders:
+      - "*"
   - match:
     - uri:
         prefix: /kiali

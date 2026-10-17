@@ -220,3 +220,49 @@ curl -k -X POST "https://voltera-dev-mesh.eastus2.cloudapp.azure.com/events" \
 * **Seguridad Intra-Clúster (mTLS STRICT)**: Una vez que el evento cruza el Gateway, los sidecars Envoy de Istio aplican mTLS estricto (`istio-auth-policy.yaml`) pod-a-pod dentro del namespace `voltera`.
 * **Desacoplamiento Temporal**: Si `billing-service` o `payment-service` se caen o están escalando, el Knative Broker retiene y reintenta la entrega según la política de backoff.
 * **Escalado Serverless**: Si la tasa de telemetría de medidores crece durante la noche, Knative Serving y KEDA pueden escalar los consumidores desde 0 hasta el límite de capacidad de cómputo del clúster.
+
+---
+
+## 6. Observabilidad y Trazabilidad en Azure Application Insights (FinOps)
+
+El clúster integra un pipeline de trazabilidad distribuida para auditar el ciclo de vida completo de cada CloudEvent en **Azure Application Insights** sin incurrir en costos adicionales de cómputo o almacenamiento.
+
+### 6.1 Arquitectura del Pipeline de Telemetría
+1. **Istio Ingress Gateway**: Recibe el CloudEvent externo y le asigna o propaga un W3C `traceparent` (`00-<trace_id>-<span_id>-01`).
+2. **Knative Eventing (`cloud-broker`)**: Configurado con `backend: zipkin` en `knative-eventing/config-tracing`, emite spans al enrutar eventos hacia los Triggers.
+3. **Microservicios (`billing-service`, `payment-service`)**: Extraen el `traceparent` entrante, emiten un span con dimensiones de negocio (`ce.id`, `voltera.niu`, `voltera.invoice_id`, `voltera.total_cop`) y propagan el contexto en la respuesta asíncrona hacia el Broker y en llamadas síncronas.
+4. **OpenTelemetry Collector (`istio-system/otel-collector`)**:
+   - Recibe spans en `:9411` (Zipkin) y `:4317/:4318` (OTLP).
+   - **Filtro FinOps**: Descarta en memoria todas las peticiones a `/health`, `/stats`, `/readyz` y `/metrics`. Solo transmite eventos reales del Event Mesh.
+   - **Exportador**: Agrupa en lotes y exporta a Application Insights vía `azuremonitor` exporter.
+
+### 6.2 Despliegue de la Observabilidad
+Para desplegar o actualizar el pipeline de trazas en AKS:
+```powershell
+pwsh .\k8s\monitoring\deploy-appinsights.ps1
+```
+
+### 6.3 Consultas KQL de Utilidad en Application Insights
+En el recurso `voltera-dev-appinsights` (sección *Logs*):
+
+#### Ver flujo completo de eventos por TraceID:
+```kql
+union requests, dependencies
+| where operation_Id == "<trace-id>"
+| project timestamp, itemType, name, customDimensions["voltera.niu"], customDimensions["voltera.invoice_id"], duration, success
+| order by timestamp asc
+```
+
+#### Consultar facturas y pagos procesados a través del Event Mesh:
+```kql
+requests
+| where customDimensions["voltera.event"] in ("ami.lectura_registrada", "billing.factura_generada")
+| project timestamp, name, 
+    NIU = customDimensions["voltera.niu"], 
+    Invoice = customDimensions["voltera.invoice_id"], 
+    TotalCOP = customDimensions["voltera.total_cop"], 
+    Txn = customDimensions["voltera.transaction_id"],
+    duration, resultCode
+| order by timestamp desc
+```
+

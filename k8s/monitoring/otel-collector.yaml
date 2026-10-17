@@ -1,0 +1,162 @@
+# ==============================================================================
+# OpenTelemetry Collector + Tracing Mesh Configuration para Azure Application Insights
+# FinOps: Colector ultraligero (15m CPU / 64Mi RAM) con filtro de health checks
+# ==============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-conf
+  namespace: istio-system
+  labels:
+    app: otel-collector
+data:
+  collector.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+    processors:
+      batch:
+        send_batch_size: 50
+        timeout: 3s
+      filter/finops:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["http.target"] != nil and IsMatch(attributes["http.target"], ".*(health|stats|metrics|readyz|livez).*")'
+            - 'attributes["http.url"] != nil and IsMatch(attributes["http.url"], ".*(health|stats|metrics|readyz|livez).*")'
+            - 'name != nil and IsMatch(name, ".*(health|stats|metrics|readyz|livez).*")'
+
+    exporters:
+      azuremonitor:
+        connection_string: "${env:APPLICATIONINSIGHTS_CONNECTION_STRING}"
+      debug:
+        verbosity: basic
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp, zipkin]
+          processors: [filter/finops, batch]
+          exporters: [azuremonitor, debug]
+      telemetry:
+        logs:
+          level: info
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: istio-system
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+    - name: zipkin
+      port: 9411
+      targetPort: 9411
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: istio-system
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.111.0
+        args: ["--config=/etc/otelcol-contrib/collector.yaml"]
+        resources:
+          requests:
+            cpu: 15m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        env:
+        - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: appinsights-secret
+              key: connection-string
+        ports:
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: otlp-http
+          containerPort: 4318
+        - name: zipkin
+          containerPort: 9411
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otelcol-contrib
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-conf
+---
+# Knative Eventing Tracing Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-tracing
+  namespace: knative-eventing
+  labels:
+    app.kubernetes.io/part-of: knative-eventing
+data:
+  backend: "zipkin"
+  zipkin-endpoint: "http://otel-collector.istio-system.svc.cluster.local:9411/api/v2/spans"
+  sample-rate: "1.0"
+  debug: "false"
+---
+# Istio Telemetry API Configuration para Namespace istio-system y voltera
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: mesh-default-tracing
+  namespace: istio-system
+spec:
+  tracing:
+  - providers:
+    - name: "zipkin-collector"
+    randomSamplingPercentage: 100.0
+---
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: voltera-tracing
+  namespace: voltera
+spec:
+  tracing:
+  - providers:
+    - name: "zipkin-collector"
+    randomSamplingPercentage: 100.0

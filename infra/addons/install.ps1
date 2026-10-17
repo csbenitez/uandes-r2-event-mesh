@@ -131,6 +131,12 @@ Write-Host "  -> Instalando Multi-Tenant Channel Broker..." -ForegroundColor Gra
 Write-Host "  -> Configurando Broker por defecto..." -ForegroundColor Gray
 & kubectl apply -f "$PSScriptRoot\knative\eventing-broker.yaml"
 
+Write-Host "  -> Inyectando sidecars de Istio en Knative Data Plane (ingress, filter, dispatcher)..." -ForegroundColor Gray
+$sidecarPatch = "$PSScriptRoot\knative\patch-dataplane-sidecar.yaml"
+& kubectl patch deployment mt-broker-ingress -n knative-eventing --patch-file $sidecarPatch
+& kubectl patch deployment mt-broker-filter -n knative-eventing --patch-file $sidecarPatch
+& kubectl patch deployment imc-dispatcher -n knative-eventing --patch-file $sidecarPatch
+
 # 6. Instalar KEDA
 Write-Host "`n[5/6] Instalando KEDA ($kedaVersion)..." -ForegroundColor Yellow
 & helm repo add kedacore https://kedacore.github.io/charts 2>$null

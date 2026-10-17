@@ -19,10 +19,12 @@ flowchart LR
 
 | Orden | Archivo | Tipo de Prueba | Descripción |
 | :---: | :--- | :--- | :--- |
+| **⭐** | **[`run-tests.ps1`](file:///d:/uniandes_local/nuevagen/tests/run-tests.ps1)** | **Suite Automatizada (PowerShell)** | Runner integral end-to-end: ejecuta pruebas híbridas (Edge K3s -> AKS) y directas HTTPS, calcula métricas de latencia ($p50, p90, p95$), y valida liquidación de facturas y cobros en AKS. |
 | **01** | **[`01_smoke_test.js`](file:///d:/uniandes_local/nuevagen/tests/01_smoke_test.js)** | **Humo y Conectividad** | Emite una lectura individual o un lote secuencial para verificar que el broker/ingress recibe y acepta los encabezados y payload CloudEvent. |
 | **02** | **[`02_prosumer_scenario.js`](file:///d:/uniandes_local/nuevagen/tests/02_prosumer_scenario.js)** | **Escenario de Negocio** | Simula prosumidores solares con excedentes de energía inyectada ($Export > Import$) para probar reglas de liquidación CREG y P2P. |
 | **03** | **[`03_load_test.js`](file:///d:/uniandes_local/nuevagen/tests/03_load_test.js)** | **Carga y Resistencia** | Genera múltiples medidores concurrentes (VUs) en etapas escalonadas para medir latencia, volumen total y tasas de error. |
 | **--** | **[`utils.js`](file:///d:/uniandes_local/nuevagen/tests/utils.js)** | **Módulo Compartido** | Constructores de payload AMI, valores aleatorios y encabezados `Ce-*` estándar. |
+
 
 ---
 

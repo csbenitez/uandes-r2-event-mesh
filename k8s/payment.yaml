@@ -1,8 +1,357 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-code
+  namespace: voltera
+data:
+  main.go: |
+    package main
+
+    import (
+    	"bytes"
+    	"crypto/rand"
+    	"encoding/hex"
+    	"encoding/json"
+    	"fmt"
+    	"io"
+    	"log"
+    	"net/http"
+    	"os"
+    	"strings"
+    	"sync"
+    	"time"
+    )
+
+    type PaymentRequest struct {
+    	AccountID string  `json:"account_id"`
+    	Amount    float64 `json:"amount"`
+    }
+
+    type PaymentResponse struct {
+    	Status        string `json:"status"`
+    	TransactionID string `json:"transaction_id"`
+    	Message       string `json:"message"`
+    }
+
+    type FacturaEvent struct {
+    	InvoiceID      string  `json:"invoice_id"`
+    	NIU            string  `json:"niu"`
+    	Periodo        string  `json:"periodo"`
+    	TotalCOP       float64 `json:"total_cop"`
+    	KwhNetos       float64 `json:"kwh_netos"`
+    	CreditoExc1Kwh float64 `json:"credito_exc1_kwh"`
+    	Status         string  `json:"status"`
+    }
+
+    type ProcessedPayment struct {
+    	TransactionID string  `json:"transaction_id"`
+    	InvoiceID     string  `json:"invoice_id"`
+    	NIU           string  `json:"niu"`
+    	Amount        float64 `json:"amount"`
+    	Status        string  `json:"status"`
+    	ProcessedAt   string  `json:"processed_at"`
+    }
+
+    type TraceContext struct {
+    	TraceID  string
+    	SpanID   string
+    	ParentID string
+    }
+
+    type ZipkinEndpoint struct {
+    	ServiceName string `json:"serviceName"`
+    }
+
+    type ZipkinSpan struct {
+    	TraceID       string            `json:"traceId"`
+    	ID            string            `json:"id"`
+    	ParentID      string            `json:"parentId,omitempty"`
+    	Name          string            `json:"name"`
+    	Kind          string            `json:"kind,omitempty"`
+    	Timestamp     int64             `json:"timestamp"`
+    	Duration      int64             `json:"duration"`
+    	LocalEndpoint ZipkinEndpoint    `json:"localEndpoint"`
+    	Tags          map[string]string `json:"tags,omitempty"`
+    }
+
+    var (
+    	historyMutex   sync.RWMutex
+    	recentPayments = make([]ProcessedPayment, 0)
+    	totalProcessed int
+    	zipkinClient   = &http.Client{Timeout: 2 * time.Second}
+    )
+
+    func getEnv(key, fallback string) string {
+    	if val := os.Getenv(key); val != "" {
+    		return val
+    	}
+    	return fallback
+    }
+
+    func enableCORS(w http.ResponseWriter) {
+    	w.Header().Set("Access-Control-Allow-Origin", "*")
+    	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Ce-Specversion, Ce-Type, Ce-Source, Ce-Id, Ce-Time, Traceparent, X-B3-TraceId, X-B3-SpanId, X-B3-Sampled")
+    }
+
+    func getOrGenerateHex(bytesLen int) string {
+    	b := make([]byte, bytesLen)
+    	if _, err := rand.Read(b); err != nil {
+    		return fmt.Sprintf("%016x", time.Now().UnixNano())
+    	}
+    	return hex.EncodeToString(b)
+    }
+
+    func extractTraceContext(r *http.Request) TraceContext {
+    	tp := r.Header.Get("traceparent")
+    	if tp == "" {
+    		tp = r.Header.Get("Traceparent")
+    	}
+    	if tp == "" {
+    		tp = r.Header.Get("Ce-Traceparent")
+    	}
+
+    	var traceID, parentID string
+    	if tp != "" {
+    		parts := strings.Split(tp, "-")
+    		if len(parts) >= 3 && len(parts[1]) == 32 {
+    			traceID = parts[1]
+    			parentID = parts[2]
+    		}
+    	}
+
+    	if traceID == "" {
+    		b3Trace := r.Header.Get("x-b3-traceid")
+    		if b3Trace != "" {
+    			traceID = b3Trace
+    			parentID = r.Header.Get("x-b3-spanid")
+    		}
+    	}
+
+    	if traceID == "" {
+    		traceID = getOrGenerateHex(16)
+    	}
+
+    	spanID := getOrGenerateHex(8)
+
+    	return TraceContext{
+    		TraceID:  traceID,
+    		SpanID:   spanID,
+    		ParentID: parentID,
+    	}
+    }
+
+    func emitSpan(serviceName, spanName string, tc TraceContext, start time.Time, tags map[string]string) {
+    	zipkinURL := getEnv("OTEL_ZIPKIN_URL", "http://otel-collector.istio-system.svc.cluster.local:9411/api/v2/spans")
+    	if zipkinURL == "none" || zipkinURL == "" {
+    		return
+    	}
+
+    	durationMicros := time.Since(start).Microseconds()
+    	timestampMicros := start.UnixNano() / 1000
+
+    	span := ZipkinSpan{
+    		TraceID:   tc.TraceID,
+    		ID:        tc.SpanID,
+    		ParentID:  tc.ParentID,
+    		Name:      spanName,
+    		Kind:      "SERVER",
+    		Timestamp: timestampMicros,
+    		Duration:  durationMicros,
+    		LocalEndpoint: ZipkinEndpoint{
+    			ServiceName: serviceName,
+    		},
+    		Tags: tags,
+    	}
+
+    	payload, err := json.Marshal([]ZipkinSpan{span})
+    	if err != nil {
+    		return
+    	}
+
+    	go func(body []byte) {
+    		req, err := http.NewRequest("POST", zipkinURL, bytes.NewBuffer(body))
+    		if err != nil {
+    			return
+    		}
+    		req.Header.Set("Content-Type", "application/json")
+    		resp, err := zipkinClient.Do(req)
+    		if err == nil {
+    			_ = resp.Body.Close()
+    		}
+    	}(payload)
+    }
+
+    // eventsHandler procesa CloudEvents recibidos desde Knative Event Mesh (trigger-payment-invoice)
+    func eventsHandler(w http.ResponseWriter, r *http.Request) {
+    	enableCORS(w)
+    	if r.Method == http.MethodOptions {
+    		w.WriteHeader(http.StatusOK)
+    		return
+    	}
+    	if r.Method != http.MethodPost {
+    		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+    		return
+    	}
+
+    	start := time.Now()
+    	tc := extractTraceContext(r)
+
+    	ceType := r.Header.Get("Ce-Type")
+    	ceID := r.Header.Get("Ce-Id")
+    	ceSource := r.Header.Get("Ce-Source")
+    	log.Printf("[PAYMENT EVENT] CloudEvent recibido: ID=%s Type=%s Source=%s Trace=%s", ceID, ceType, ceSource, tc.TraceID)
+
+    	body, err := io.ReadAll(r.Body)
+    	if err != nil {
+    		http.Error(w, "Error reading request body", http.StatusBadRequest)
+    		return
+    	}
+
+    	if ceType == "com.voltera.billing.factura_generada" || ceType == "" {
+    		var factura FacturaEvent
+    		if err := json.Unmarshal(body, &factura); err != nil {
+    			log.Printf("[PAYMENT WARN] Error deserializando factura: %v (raw: %s)", err, string(body))
+    			http.Error(w, "Invalid invoice JSON", http.StatusBadRequest)
+    			return
+    		}
+
+    		txnID := fmt.Sprintf("TXN-MESH-%d", time.Now().UnixNano()/1000000)
+    		nowStr := time.Now().UTC().Format(time.RFC3339)
+    		log.Printf("[PAYMENT] Cobro y dispersion exitosa para Factura %s (NIU %s) por valor $%.2f COP | Txn: %s",
+    			factura.InvoiceID, factura.NIU, factura.TotalCOP, txnID)
+
+    		p := ProcessedPayment{
+    			TransactionID: txnID,
+    			InvoiceID:     factura.InvoiceID,
+    			NIU:           factura.NIU,
+    			Amount:        factura.TotalCOP,
+    			Status:        "SUCCESS",
+    			ProcessedAt:   nowStr,
+    		}
+
+    		historyMutex.Lock()
+    		totalProcessed++
+    		recentPayments = append([]ProcessedPayment{p}, recentPayments...)
+    		if len(recentPayments) > 50 {
+    			recentPayments = recentPayments[:50]
+    		}
+    		historyMutex.Unlock()
+
+    		tags := map[string]string{
+    			"ce.id":                  ceID,
+    			"ce.type":                ceType,
+    			"ce.source":              ceSource,
+    			"http.method":            "POST",
+    			"http.status_code":       "200",
+    			"voltera.event":          "billing.factura_generada",
+    			"voltera.niu":            factura.NIU,
+    			"voltera.invoice_id":     factura.InvoiceID,
+    			"voltera.total_cop":      fmt.Sprintf("%.2f", factura.TotalCOP),
+    			"voltera.transaction_id": txnID,
+    			"voltera.payment_status": "SUCCESS",
+    		}
+    		emitSpan("payment-service", "payment.process_invoice_event", tc, start, tags)
+
+    		w.WriteHeader(http.StatusOK)
+    		return
+    	}
+
+    	w.WriteHeader(http.StatusOK)
+    }
+
+    // processPaymentHandler atiende llamadas sincronas directas
+    func processPaymentHandler(w http.ResponseWriter, r *http.Request) {
+    	enableCORS(w)
+    	if r.Method == http.MethodOptions {
+    		w.WriteHeader(http.StatusOK)
+    		return
+    	}
+    	if r.Method != http.MethodPost {
+    		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+    		return
+    	}
+
+    	start := time.Now()
+    	tc := extractTraceContext(r)
+
+    	var req PaymentRequest
+    	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+    		http.Error(w, "Invalid request body", http.StatusBadRequest)
+    		return
+    	}
+
+    	txnID := fmt.Sprintf("TXN-%d", time.Now().UnixNano()/1000000)
+    	log.Printf("[PAYMENT SYNC] Recibida solicitud de pago para cuenta %s por valor %.2f | Txn: %s | Trace: %s",
+    		req.AccountID, req.Amount, txnID, tc.TraceID)
+
+    	res := PaymentResponse{
+    		Status:        "SUCCESS",
+    		TransactionID: txnID,
+    		Message:       fmt.Sprintf("Pago de %.2f procesado correctamente", req.Amount),
+    	}
+
+    	tags := map[string]string{
+    		"http.method":            "POST",
+    		"http.status_code":       "200",
+    		"voltera.account_id":     req.AccountID,
+    		"voltera.amount_cop":     fmt.Sprintf("%.2f", req.Amount),
+    		"voltera.transaction_id": txnID,
+    		"voltera.payment_status": "SUCCESS",
+    	}
+    	emitSpan("payment-service", "payment.process_payment_sync", tc, start, tags)
+
+    	w.Header().Set("Content-Type", "application/json")
+    	w.WriteHeader(http.StatusOK)
+    	json.NewEncoder(w).Encode(res)
+    }
+
+    func healthHandler(w http.ResponseWriter, r *http.Request) {
+    	enableCORS(w)
+    	w.Header().Set("Content-Type", "application/json")
+    	json.NewEncoder(w).Encode(map[string]interface{}{
+    		"status":    "healthy",
+    		"service":   "payment-service",
+    		"timestamp": time.Now().UTC().Format(time.RFC3339),
+    	})
+    }
+
+    func statsHandler(w http.ResponseWriter, r *http.Request) {
+    	enableCORS(w)
+    	historyMutex.RLock()
+    	defer historyMutex.RUnlock()
+
+    	w.Header().Set("Content-Type", "application/json")
+    	json.NewEncoder(w).Encode(map[string]interface{}{
+    		"service":         "payment-service",
+    		"total_processed": totalProcessed,
+    		"recent_payments": recentPayments,
+    	})
+    }
+
+    func main() {
+    	port := getEnv("PORT", "8081")
+
+    	http.HandleFunc("/process", processPaymentHandler)
+    	http.HandleFunc("/events", eventsHandler)
+    	http.HandleFunc("/health", healthHandler)
+    	http.HandleFunc("/stats", statsHandler)
+
+    	log.Printf("Payment Service (Pagos) iniciando en el puerto :%s...", port)
+    	if err := http.ListenAndServe(":"+port, nil); err != nil {
+    		log.Fatalf("Error iniciando servidor: %v", err)
+    	}
+    }
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-service
   namespace: voltera
+  labels:
+    app: payment-service
+    version: v1
 spec:
   replicas: 1
   selector:
@@ -12,35 +361,68 @@ spec:
     metadata:
       labels:
         app: payment-service
+        version: v1
+        sidecar.istio.io/inject: "true"
+      annotations:
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/proxyCPU: "10m"
+        sidecar.istio.io/proxyMemory: "64Mi"
     spec:
       containers:
       - name: payment-service
-        image: voltera/payment-service:latest
-        imagePullPolicy: IfNotPresent
+        image: golang:1.22-alpine
+        command: ["/bin/sh", "-c", "go run /app/main.go"]
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
         ports:
-        - containerPort: 8081
-        livenessProbe:
+        - name: http
+          containerPort: 8081
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+        startupProbe:
           httpGet:
             path: /health
             port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 10
+          failureThreshold: 30
+          periodSeconds: 4
         readinessProbe:
           httpGet:
             path: /health
             port: 8081
-          initialDelaySeconds: 2
           periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          periodSeconds: 10
+      volumes:
+      - name: app-code
+        configMap:
+          name: payment-service-code
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: payment-service
   namespace: voltera
+  labels:
+    app: payment-service
+    version: v1
 spec:
   selector:
     app: payment-service
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8081
+    - name: http-alt
+      protocol: TCP
       port: 8081
       targetPort: 8081

@@ -1,3 +1,4 @@
+# Configuración consolidada de TLS con cert-manager y Let's Encrypt para AKS
 apiVersion: networking.k8s.io/v1
 kind: IngressClass
 metadata:
@@ -32,4 +33,16 @@ spec:
     - http01:
         ingress:
           ingressClassName: istio
-
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: voltera-ingress-cert
+  namespace: istio-system
+spec:
+  secretName: voltera-ingress-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - "voltera-dev-mesh.eastus2.cloudapp.azure.com"

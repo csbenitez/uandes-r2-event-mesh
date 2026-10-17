@@ -43,11 +43,11 @@ flowchart LR
 | Subdirectorio / Archivo | Versión Fijada | Función Arquitectónica |
 |---|---|---|
 | [`istio/`](file:///d:/uniandes_local/nuevagen/infra/addons/istio) | `1.24.2` | Perfil Minimal de Istio, Ingress Gateway ([`aks-values.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/istio/aks-values.yaml) para Azure y [`values.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/istio/values.yaml) para K3s local). |
-| [`knative/`](file:///d:/uniandes_local/nuevagen/infra/addons/knative) | `v1.16.0` | Knative Serving ([`serving-config.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/serving-config.yaml)) y Knative Eventing ([`eventing-broker.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/eventing-broker.yaml)). |
+| [`knative/`](file:///d:/uniandes_local/nuevagen/infra/addons/knative) | `v1.16.0` | Knative Serving ([`serving-config.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/serving-config.yaml)), Knative Eventing ([`eventing-broker.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/eventing-broker.yaml)) y parche de sidecars Istio para el Data Plane ([`patch-dataplane-sidecar.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/patch-dataplane-sidecar.yaml)). |
 | [`keda/`](file:///d:/uniandes_local/nuevagen/infra/addons/keda) | `2.16.0` | Operador KEDA para autoescalado horizontal reactivo basado en eventos y métricas horarias. |
 | [`examples/`](file:///d:/uniandes_local/nuevagen/infra/addons/examples) | N/A | Manifiestos de prueba: [`hello-ksvc.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/examples/hello-ksvc.yaml), [`event-display.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/examples/event-display.yaml) y [`keda-scaledobject.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/examples/keda-scaledobject.yaml). |
 | [`versions.env`](file:///d:/uniandes_local/nuevagen/infra/addons/versions.env) | N/A | Configuración centralizada de versiones consumida dinámicamente por los scripts de despliegue. |
-| [`install.ps1`](file:///d:/uniandes_local/nuevagen/infra/addons/install.ps1) | PowerShell | Script automatizado para Windows con detección de entorno (`local`, `azure`) y cálculo de dominios sslip.io. |
+| [`install.ps1`](file:///d:/uniandes_local/nuevagen/infra/addons/install.ps1) | PowerShell | Script automatizado para Windows con detección de entorno (`local`, `azure`), parche de sidecars para el Data Plane de Knative y cálculo de dominios sslip.io. |
 | [`install.sh`](file:///d:/uniandes_local/nuevagen/infra/addons/install.sh) | Bash | Script automatizado para Linux/macOS con soporte de parámetros idéntico. |
 
 ---
@@ -107,3 +107,16 @@ kubectl get broker,trigger -n default
 kubectl apply -f infra/addons/examples/keda-scaledobject.yaml
 kubectl get scaledobject billing-service-scaler -n voltera
 ```
+
+### 4.4 Inyección Selectiva de Sidecars Istio en Knative Eventing (Data Plane)
+Para validar el tráfico de eventos en la malla de servicios (mTLS, Kiali y Prometheus) sin provocar bloqueos de ciclo de vida en los webhooks de admisión o controladores de Knative, la inyección de sidecars se aplica **exclusivamente a los pods del Data Plane** mediante [`patch-dataplane-sidecar.yaml`](file:///d:/uniandes_local/nuevagen/infra/addons/knative/patch-dataplane-sidecar.yaml):
+
+```powershell
+$patch = "infra/addons/knative/patch-dataplane-sidecar.yaml"
+kubectl patch deployment mt-broker-ingress -n knative-eventing --patch-file $patch
+kubectl patch deployment mt-broker-filter -n knative-eventing --patch-file $patch
+kubectl patch deployment imc-dispatcher -n knative-eventing --patch-file $patch
+```
+
+* **Data Plane protegido (2/2 Ready):** `mt-broker-ingress`, `mt-broker-filter`, `imc-dispatcher`.
+* **Control Plane aislado (1/1 Ready):** `eventing-controller`, `eventing-webhook`, `imc-controller`, `mt-broker-controller`.

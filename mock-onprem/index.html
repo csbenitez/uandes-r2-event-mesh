@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voltera Event Mesh | Hybrid Edge-to-Cloud Control Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --card-bg: rgba(18, 24, 38, 0.85);
+      --border: rgba(56, 189, 248, 0.15);
+      --border-bright: rgba(56, 189, 248, 0.4);
+      --cyan: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --purple: #a855f7;
+      --rose: #f43f5e;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.08) 0px, transparent 50%);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo-badge {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 0 24px rgba(56, 189, 248, 0.4);
+    }
+    h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+    .subtitle { color: var(--text-muted); font-size: 13px; }
+    .pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--cyan);
+      border: 1px solid var(--border);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pill.green { background: rgba(16, 185, 129, 0.1); color: var(--emerald); border-color: rgba(16, 185, 129, 0.3); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Topology */
+    .topology-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 24px;
+      backdrop-filter: blur(12px);
+    }
+    .topology-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .topology-bar {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 12px;
+      position: relative;
+    }
+    .topo-node {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .topo-node.active {
+      border-color: var(--cyan);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+    .topo-node .icon { font-size: 20px; margin-bottom: 6px; }
+    .topo-node .name { font-size: 12px; font-weight: 700; }
+    .topo-node .role { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+    .topo-node .zone {
+      position: absolute;
+      top: -8px;
+      right: 8px;
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .zone.edge { background: #0369a1; color: #fff; }
+    .zone.cloud { background: #7e22ce; color: #fff; }
+
+    /* Layout Grid */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .topology-bar { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(12px);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .card-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+    /* Preset Buttons */
+    .preset-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .preset-btn {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+      transition: all 0.2s;
+    }
+    .preset-btn:hover {
+      border-color: var(--cyan);
+      background: rgba(56, 189, 248, 0.08);
+      transform: translateY(-1px);
+    }
+    .preset-btn .p-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .preset-btn .p-desc { font-size: 11px; color: var(--text-muted); }
+
+    /* Form Fields */
+    .form-group { margin-bottom: 14px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--cyan);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+    .flex-row { display: flex; gap: 12px; }
+
+    /* Action Buttons */
+    .btn-primary {
+      width: 100%;
+      background: linear-gradient(135deg, #0284c7, #0ea5e9);
+      border: none;
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 16px rgba(14, 165, 233, 0.3);
+      transition: all 0.2s;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 6px 20px rgba(14, 165, 233, 0.5);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Terminal & Metrics */
+    .terminal {
+      background: #050811;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
+      min-height: 220px;
+      max-height: 280px;
+      overflow-y: auto;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+    .term-line { margin-bottom: 4px; }
+    .term-tag { padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; }
+    .tag-ok { background: rgba(16, 185, 129, 0.2); color: var(--emerald); }
+    .tag-ce { background: rgba(56, 189, 248, 0.2); color: var(--cyan); }
+    .tag-cloud { background: rgba(168, 85, 247, 0.2); color: var(--purple); }
+
+    /* Stats Grid */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-val { font-size: 20px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+    .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+
+    /* Invoices Table */
+    .table-container {
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+    th { text-align: left; padding: 8px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+    td { padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); }
+    tr:hover { background: rgba(56, 189, 248, 0.05); }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <div class="logo-badge">⚡</div>
+      <div>
+        <h1>VOLTERA EVENT MESH</h1>
+        <div class="subtitle">Plataforma Híbrida Energytech | Arquitectura Desacoplada CloudEvents v1.0</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <span class="pill green"><span class="dot"></span> K3S EDGE ACTIVO</span>
+      <span class="pill"><span class="dot"></span> AKS CLOUD ONLINE</span>
+    </div>
+  </div>
+
+  <!-- Topology Bar -->
+  <div class="topology-container">
+    <div class="topology-title">
+      <span>TOPOLOGÍA DEL MESH EN TIEMPO REAL (EDGE ➔ CLOUD)</span>
+      <span style="font-family:'JetBrains Mono'; font-weight:normal; text-transform:none;">mTLS STRICT + CNCF CloudEvents Binary Mode</span>
+    </div>
+    <div class="topology-bar">
+      <div class="topo-node" id="node-meter">
+        <span class="zone edge">K3S</span>
+        <div class="icon">📟</div>
+        <div class="name">ami-mock-service</div>
+        <div class="role">:8080 (Go)</div>
+      </div>
+      <div class="topo-node" id="node-onprem-broker">
+        <span class="zone edge">K3S</span>
+        <div class="icon">🔀</div>
+        <div class="name">onprem-broker</div>
+        <div class="role">Knative Broker</div>
+      </div>
+      <div class="topo-node" id="node-edge-trigger">
+        <span class="zone edge">K3S</span>
+        <div class="icon">🚀</div>
+        <div class="name">trigger-to-cloud</div>
+        <div class="role">HTTPS Let's Encrypt</div>
+      </div>
+      <div class="topo-node" id="node-cloud-broker">
+        <span class="zone cloud">AKS</span>
+        <div class="icon">☁️</div>
+        <div class="name">cloud-broker</div>
+        <div class="role">Istio Ingress / Mesh</div>
+      </div>
+      <div class="topo-node" id="node-billing">
+        <span class="zone cloud">AKS</span>
+        <div class="icon">🧾</div>
+        <div class="name">billing-service</div>
+        <div class="role">Netting CREG 101-072</div>
+      </div>
+      <div class="topo-node" id="node-payment">
+        <span class="zone cloud">AKS</span>
+        <div class="icon">💳</div>
+        <div class="name">payment-service</div>
+        <div class="role">Recaudo y Dispersión</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid-2">
+    <!-- Emisor de Eventos -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📡 Emisor de Telemetría AMI (Escenarios de Prueba)</div>
+        <span class="pill">CREG 101-001</span>
+      </div>
+
+      <!-- Presets -->
+      <div class="preset-grid">
+        <button class="preset-btn" onclick="applyPreset('residential')">
+          <div class="p-title">🏠 Consumidor Estándar</div>
+          <div class="p-desc">Importación neta (16.5 kWh) | Saldo a pagar</div>
+        </button>
+        <button class="preset-btn" onclick="applyPreset('prosumer')">
+          <div class="p-title">☀️ Prosumidor Solar (AGPE)</div>
+          <div class="p-desc">Alta inyección solar (12.4 kWh) | CREG 174</div>
+        </button>
+        <button class="preset-btn" onclick="applyPreset('community')">
+          <div class="p-title">⚡ Comunidad Energética</div>
+          <div class="p-desc">Autogeneración colectiva | CREG 101-072</div>
+        </button>
+        <button class="preset-btn" onclick="runBenchmark(10)">
+          <div class="p-title">🚀 Benchmark de Latencia</div>
+          <div class="p-desc">Ráfaga de 10 CloudEvents seguidos</div>
+        </button>
+      </div>
+
+      <!-- Form -->
+      <div class="form-group">
+        <label>Modo de Enrutamiento</label>
+        <select id="routeMode">
+          <option value="edge-hybrid">🔄 Flujo Híbrido: K3s Local ➔ onprem-broker ➔ Azure AKS</option>
+          <option value="cloud-direct">☁️ Directo a Azure AKS Cloud Broker (/events)</option>
+        </select>
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex:1">
+          <label>Número de Identificación Única (NIU)</label>
+          <input type="text" id="niu" value="1002345">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Serie del Medidor</label>
+          <input type="text" id="meter" value="MTR-COL-8492">
+        </div>
+      </div>
+
+      <div class="flex-row">
+        <div class="form-group" style="flex:1">
+          <label>kWh Importados (Consumo)</label>
+          <input type="number" id="kwhImport" value="14.50" step="0.1">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>kWh Exportados (Inyección)</label>
+          <input type="number" id="kwhExport" value="3.20" step="0.1">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Tensión (V)</label>
+          <input type="number" id="voltage" value="120.5" step="0.5">
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btnEmit" onclick="emitEvent()">
+        <span>⚡</span> DISPARAR CLOUDEVENT AL EVENT MESH
+      </button>
+    </div>
+
+    <!-- Resultados y Métricas -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📊 Métricas de Latencia y Trazabilidad</div>
+        <button class="pill" onclick="refreshCloudStatus()" style="cursor:pointer">🔄 Actualizar Cloud</button>
+      </div>
+
+      <!-- Stat Boxes -->
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-val" id="statSent" style="color:var(--cyan)">0</div>
+          <div class="stat-label">Eventos</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="statLastLat" style="color:var(--emerald)">-</div>
+          <div class="stat-label">Última (ms)</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="statAvgLat" style="color:var(--amber)">-</div>
+          <div class="stat-label">Promedio</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="statP95" style="color:var(--purple)">-</div>
+          <div class="stat-label">p95 (ms)</div>
+        </div>
+      </div>
+
+      <!-- Terminal / Logs -->
+      <div class="terminal" id="termLogs">
+        <div class="term-line" style="color:var(--text-muted)">// Esperando emisión de eventos en el Event Mesh...</div>
+      </div>
+
+      <!-- Recent Invoices generated in Cloud -->
+      <div style="margin-top:16px;">
+        <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:8px; display:flex; justify-content:space-between">
+          <span>FACTURAS LIQUIDADAS EN AKS (Netting CREG 101-072)</span>
+          <span id="cloudCount" style="color:var(--purple)">0 procesadas</span>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>INVOICE ID</th>
+                <th>NIU</th>
+                <th>NETO (kWh)</th>
+                <th>TOTAL COP</th>
+                <th>STATUS</th>
+              </tr>
+            </thead>
+            <tbody id="invoicesTbody">
+              <tr><td colspan="5" style="text-align:center; color:var(--text-muted)">Sin eventos procesados aún</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let latencies = [];
+    let sentCount = 0;
+
+    function applyPreset(type) {
+      if (type === 'residential') {
+        document.getElementById('niu').value = '100' + Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('kwhImport').value = (12.0 + Math.random() * 8).toFixed(2);
+        document.getElementById('kwhExport').value = (0.5 + Math.random() * 1.5).toFixed(2);
+      } else if (type === 'prosumer') {
+        document.getElementById('niu').value = '200' + Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('kwhImport').value = (1.5 + Math.random() * 2).toFixed(2);
+        document.getElementById('kwhExport').value = (10.0 + Math.random() * 8).toFixed(2);
+      } else if (type === 'community') {
+        document.getElementById('niu').value = '300' + Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('kwhImport').value = (6.0 + Math.random() * 4).toFixed(2);
+        document.getElementById('kwhExport').value = (6.0 + Math.random() * 4).toFixed(2);
+      }
+      log(`[PRESET] Escenario aplicado: ${type.toUpperCase()}`);
+    }
+
+    function log(msg, tag = 'INFO', tagClass = 'tag-ce') {
+      const term = document.getElementById('termLogs');
+      const time = new Date().toISOString().split('T')[1].replace('Z','');
+      const line = document.createElement('div');
+      line.className = 'term-line';
+      line.innerHTML = `<span style="color:var(--text-muted)">${time}</span> <span class="term-tag ${tagClass}">${tag}</span> ${msg}`;
+      term.appendChild(line);
+      term.scrollTop = term.scrollHeight;
+    }
+
+    async function emitEvent() {
+      const btn = document.getElementById('btnEmit');
+      btn.disabled = true;
+      const niu = document.getElementById('niu').value;
+      const meter = document.getElementById('meter').value;
+      const kwhImport = parseFloat(document.getElementById('kwhImport').value);
+      const kwhExport = parseFloat(document.getElementById('kwhExport').value);
+      const voltage = parseFloat(document.getElementById('voltage').value);
+      const mode = document.getElementById('routeMode').value;
+
+      // Animar topología
+      animateTopology();
+
+      const startTime = performance.now();
+      try {
+        let res, data;
+        if (mode === 'edge-hybrid') {
+          // POST a /emit en el mock Go local
+          res = await fetch('/emit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              niu: niu,
+              medidor_serie: meter,
+              kwh_importados: kwhImport,
+              kwh_exportados: kwhExport,
+              tension_voltios: voltage
+            })
+          });
+          data = await res.json();
+        } else {
+          // Directo a Cloud Ingress
+          const ceId = 'evt-direct-' + Date.now();
+          const targetUrl = 'https://voltera-dev-mesh.eastus2.cloudapp.azure.com/events';
+          res = await fetch(targetUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Ce-Specversion': '1.0',
+              'Ce-Type': 'com.voltera.ami.lectura_registrada',
+              'Ce-Source': '//ui/browser/direct',
+              'Ce-Id': ceId,
+              'Ce-Time': new Date().toISOString()
+            },
+            body: JSON.stringify({
+              niu: niu,
+              medidor_serie: meter,
+              kwh_importados: kwhImport,
+              kwh_exportados: kwhExport,
+              tension_voltios: voltage
+            })
+          });
+          data = { message: 'CloudEvent enviado directo a AKS', status: res.status };
+        }
+
+        const totalLatency = (performance.now() - startTime).toFixed(1);
+        latencies.push(parseFloat(totalLatency));
+        sentCount++;
+
+        updateStats(totalLatency);
+        log(`CloudEvent entregado [HTTP ${res.status}] Latencia E2E: ${totalLatency}ms (NIU: ${niu})`, 'OK', 'tag-ok');
+
+        // Consultar estado de AKS tras 800ms
+        setTimeout(refreshCloudStatus, 800);
+      } catch (err) {
+        log(`Error enviando CloudEvent: ${err.message}`, 'ERR', 'tag-cloud');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function animateTopology() {
+      const nodes = ['node-meter', 'node-onprem-broker', 'node-edge-trigger', 'node-cloud-broker', 'node-billing', 'node-payment'];
+      nodes.forEach((id, idx) => {
+        setTimeout(() => {
+          const el = document.getElementById(id);
+          el.classList.add('active');
+          setTimeout(() => el.classList.remove('active'), 600);
+        }, idx * 120);
+      });
+    }
+
+    function updateStats(lastLat) {
+      document.getElementById('statSent').textContent = sentCount;
+      document.getElementById('statLastLat').textContent = lastLat;
+      const sum = latencies.reduce((a, b) => a + b, 0);
+      const avg = (sum / latencies.length).toFixed(1);
+      document.getElementById('statAvgLat').textContent = avg;
+
+      const sorted = [...latencies].sort((a,b) => a - b);
+      const p95Index = Math.floor(sorted.length * 0.95);
+      document.getElementById('statP95').textContent = sorted[p95Index] || avg;
+    }
+
+    async function runBenchmark(count) {
+      log(`[BENCHMARK] Iniciando ráfaga de ${count} eventos al Event Mesh...`, 'BENCH', 'tag-cloud');
+      for (let i = 0; i < count; i++) {
+        applyPreset('prosumer');
+        await emitEvent();
+        await new Promise(r => setTimeout(r, 200));
+      }
+      log(`[BENCHMARK] Completada ráfaga de ${count} eventos. Revisando estadísticas.`, 'DONE', 'tag-ok');
+    }
+
+    async function refreshCloudStatus() {
+      try {
+        const res = await fetch('/cloud-status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.billing && data.billing.recent_invoices) {
+          document.getElementById('cloudCount').textContent = `${data.billing.total_processed} facturas procesadas`;
+          renderInvoices(data.billing.recent_invoices);
+        }
+      } catch (e) {
+        // En caso de que se abra directamente desde archivo HTML, intentar consultar directo
+        try {
+          const r = await fetch('https://voltera-dev-mesh.eastus2.cloudapp.azure.com/api/billing/stats');
+          const d = await r.json();
+          if (d.recent_invoices) {
+            document.getElementById('cloudCount').textContent = `${d.total_processed} facturas procesadas`;
+            renderInvoices(d.recent_invoices);
+          }
+        } catch (_) {}
+      }
+    }
+
+    function renderInvoices(invoices) {
+      const tbody = document.getElementById('invoicesTbody');
+      if (!invoices || invoices.length === 0) return;
+      tbody.innerHTML = '';
+      invoices.slice(0, 10).forEach(inv => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="color:var(--cyan); font-weight:700">${inv.invoice_id}</td>
+          <td>${inv.niu}</td>
+          <td style="color:${inv.kwh_netos > 0 ? 'var(--amber)' : 'var(--emerald)'}">${inv.kwh_netos.toFixed(2)}</td>
+          <td>$${inv.total_cop.toLocaleString('es-CO')}</td>
+          <td><span class="pill green" style="padding:1px 6px">${inv.status}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Auto-refresh al cargar
+    setTimeout(refreshCloudStatus, 1000);
+  </script>
+</body>
+</html>

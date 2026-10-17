@@ -53,25 +53,27 @@ El archivo `knative-event-mesh.yaml` orquesta el enrutamiento de eventos mediant
 
 ```mermaid
 flowchart LR
-    IngressRequest["Peticion HTTP Externa<br/>POST /events<br/>(Ce-Type: com.voltera.ami.lectura_registrada)"] --> Gateway["Istio Gateway<br/>(cloud-eventmesh-gateway)"]
+    IngressRequest["Petición HTTP Externa<br/>POST /events<br/>(Ce-Type: com.voltera.ami.lectura_registrada)"] --> Gateway["Istio Ingress Gateway<br/>(cloud-eventmesh-gateway)"]
 
     Gateway --> VS["VirtualService: cloud-broker-ingress<br/>Rewrite: /events -> /voltera/cloud-broker"]
 
-    subgraph KnativeCore["Knative Eventing Engine"]
-        VS --> Broker["Broker: cloud-broker<br/>(Multi-channel Bus)"]
+    subgraph KnativeCore["Knative Eventing Data Plane (Envoy Sidecars mTLS)"]
+        VS --> IngressPod["mt-broker-ingress<br/>(Sidecar 2/2)"]
+        IngressPod --> IMCPod["imc-dispatcher<br/>(Sidecar 2/2)"]
+        IMCPod --> FilterPod["mt-broker-filter<br/>(Sidecar 2/2)"]
         
-        Broker --> T1["Trigger: trigger-billing-ami<br/>Filtro: Ce-Type = ami.lectura_registrada"]
-        Broker --> T2["Trigger: trigger-logger-ami<br/>Filtro: Ce-Type = ami.lectura_registrada"]
-        Broker --> T3["Trigger: trigger-payment-invoice<br/>Filtro: Ce-Type = billing.factura_generada"]
+        FilterPod --> T1["Trigger: trigger-billing-ami<br/>Filtro: ami.lectura_registrada"]
+        FilterPod --> T2["Trigger: trigger-logger-ami<br/>Filtro: ami.lectura_registrada"]
+        FilterPod --> T3["Trigger: trigger-payment-invoice<br/>Filtro: billing.factura_generada"]
     end
 
-    subgraph ServicesSubscribers["Servicios Suscriptores"]
-        T1 -->|POST /events| Billing["billing-service:8080"]
-        T2 -->|POST /| Logger["cloud-event-logger:80"]
-        T3 -->|POST /events| Payment["payment-service:8081"]
+    subgraph ServicesSubscribers["Namespace voltera (Zero Trust mTLS STRICT)"]
+        T1 -->|POST /events| Billing["billing-service:8080<br/>(Sidecar 2/2)"]
+        T2 -->|POST /| Logger["cloud-event-logger:80<br/>(Sidecar 2/2)"]
+        T3 -->|POST /events| Payment["payment-service:8081<br/>(Sidecar 2/2)"]
     end
 
-    Billing -.->|Knative Event Reply<br/>com.voltera.billing.factura_generada| Broker
+    Billing -.->|Knative Event Reply<br/>com.voltera.billing.factura_generada| IngressPod
 ```
 
 ---
