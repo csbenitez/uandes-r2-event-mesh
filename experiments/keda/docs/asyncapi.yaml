@@ -1,0 +1,163 @@
+asyncapi: '2.6.0'
+info:
+  title: Voltera Entrega 3 - Event API
+  version: '0.1.0'
+  description: Contratos de eventos alineados a los BC Medición y Telemetría, Balance P2P y Match Energético.
+defaultContentType: application/json
+servers:
+  local:
+    url: localhost:29092
+    protocol: kafka
+channels:
+  meter-declarations:
+    description: Ingreso de lecturas AMI. Topic con semántica queue-like mediante consumer group metering-service.
+    publish:
+      message: { $ref: '#/components/messages/LecturaMedidorRecibida' }
+  energy-measurements:
+    publish:
+      message: { $ref: '#/components/messages/MedicionEnergeticaRegistrada' }
+  energy-positions:
+    publish:
+      message:
+        oneOf:
+          - { $ref: '#/components/messages/ExcedenteEnergeticoDetectado' }
+          - { $ref: '#/components/messages/DemandaEnergeticaDetectada' }
+  kwh-prices:
+    publish:
+      message: { $ref: '#/components/messages/PrecioKWhActualizado' }
+  matching-parameters:
+    publish:
+      message: { $ref: '#/components/messages/ParametrosMatchingActualizados' }
+  energy-matched:
+    publish:
+      message:
+        oneOf:
+          - { $ref: '#/components/messages/MatchEnergeticoConfirmado' }
+          - { $ref: '#/components/messages/MatchEnergeticoRechazado' }
+components:
+  schemas:
+    EventMetadata:
+      type: object
+      required: [eventId, correlationId, ocurridoEnUtc, schemaVersion]
+      properties:
+        eventId: { type: string, format: uuid }
+        correlationId: { type: string, format: uuid }
+        ocurridoEnUtc: { type: string, format: date-time }
+        schemaVersion: { type: integer, minimum: 1 }
+  messages:
+    LecturaMedidorRecibida:
+      name: LecturaMedidorRecibida
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            required: [medidorId, participanteId, consumoKWh, generacionKWh, unidadMedida, zona, latitud, longitud]
+            properties:
+              medidorId: { type: string }
+              participanteId: { type: string }
+              consumoKWh: { type: number }
+              generacionKWh: { type: number }
+              unidadMedida: { type: string, const: kWh }
+              zona: { type: string }
+              latitud: { type: number }
+              longitud: { type: number }
+    MedicionEnergeticaRegistrada:
+      name: MedicionEnergeticaRegistrada
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            required: [medicionId, medidorId, participanteId, consumoKWh, generacionKWh, zona, timestampLectura]
+            properties:
+              medicionId: { type: string, format: uuid }
+              medidorId: { type: string }
+              participanteId: { type: string }
+              consumoKWh: { type: number }
+              generacionKWh: { type: number }
+              unidadMedida: { type: string }
+              zona: { type: string }
+              latitud: { type: number }
+              longitud: { type: number }
+              timestampLectura: { type: string, format: date-time }
+    ExcedenteEnergeticoDetectado:
+      name: ExcedenteEnergeticoDetectado
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            required: [posicionId, participanteId, medidorId, excedenteKWh, zona]
+            properties:
+              posicionId: { type: string, format: uuid }
+              participanteId: { type: string }
+              medidorId: { type: string }
+              excedenteKWh: { type: number }
+              zona: { type: string }
+              latitud: { type: number }
+              longitud: { type: number }
+              periodoDesde: { type: string, format: date-time }
+              periodoHasta: { type: string, format: date-time }
+    DemandaEnergeticaDetectada:
+      name: DemandaEnergeticaDetectada
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            required: [posicionId, participanteId, medidorId, demandaKWh, zona]
+            properties:
+              posicionId: { type: string, format: uuid }
+              participanteId: { type: string }
+              medidorId: { type: string }
+              demandaKWh: { type: number }
+              zona: { type: string }
+              latitud: { type: number }
+              longitud: { type: number }
+              periodoDesde: { type: string, format: date-time }
+              periodoHasta: { type: string, format: date-time }
+    PrecioKWhActualizado:
+      name: PrecioKWhActualizado
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            properties:
+              precioKWh: { type: number }
+              moneda: { type: string, example: COP }
+              vigenteDesde: { type: string, format: date-time }
+              vigenteHasta: { type: string, format: date-time }
+    ParametrosMatchingActualizados:
+      name: ParametrosMatchingActualizados
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            properties:
+              distanciaMaximaKm: { type: number }
+              factorProximidad: { type: number }
+              margenTarifa: { type: number }
+              ventanaMatchingSegundos: { type: integer }
+    MatchEnergeticoConfirmado:
+      name: MatchEnergeticoConfirmado
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            required: [matchId, ofertaId, demandaId, kWhAsignados, tarifaP2P, estado]
+            properties:
+              matchId: { type: string, format: uuid }
+              ofertaId: { type: string, format: uuid }
+              demandaId: { type: string, format: uuid }
+              kWhAsignados: { type: number }
+              tarifaP2P: { type: number }
+              proximidadKm: { type: number }
+              vigenciaHasta: { type: string, format: date-time }
+              estado: { type: string }
+    MatchEnergeticoRechazado:
+      name: MatchEnergeticoRechazado
+      payload:
+        allOf:
+          - { $ref: '#/components/schemas/EventMetadata' }
+          - type: object
+            properties:
+              ofertaId: { type: string, format: uuid }
+              demandaId: { type: string, format: uuid }
+              motivo: { type: string }

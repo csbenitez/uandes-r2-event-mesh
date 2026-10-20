@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metering-service
+  namespace: voltera
+
+spec:
+  replicas: 0
+
+  selector:
+    matchLabels:
+      app: metering-service
+
+  template:
+    metadata:
+      labels:
+        app: metering-service
+
+    spec:
+      containers:
+        - name: metering-service
+          image: voltera/metering-service:local
+          imagePullPolicy: Never
+
+          env:
+            - name: Kafka__BootstrapServers
+              value: "kafka:9092"
+
+            - name: PROCESSING_DELAY_MS
+              value: "100"

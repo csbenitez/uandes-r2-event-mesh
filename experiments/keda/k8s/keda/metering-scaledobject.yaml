@@ -1,0 +1,24 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: metering-service-scaler
+  namespace: voltera
+
+spec:
+  scaleTargetRef:
+    name: metering-service
+
+  pollingInterval: 5
+  cooldownPeriod: 30
+
+  minReplicaCount: 0
+  maxReplicaCount: 10
+
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: kafka.voltera.svc.cluster.local:9092
+        consumerGroup: metering-service
+        topic: meter-declarations
+        lagThreshold: "100"
+        offsetResetPolicy: earliest

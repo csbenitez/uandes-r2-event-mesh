@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ami-load-test
+  namespace: voltera
+
+spec:
+  backoffLimit: 1
+
+  template:
+    metadata:
+      labels:
+        app: ami-load-test
+
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: ami-simulator
+          image: voltera/ami-simulator:local
+          imagePullPolicy: Never
+
+          env:
+            - name: Kafka__BootstrapServers
+              value: "kafka:9092"
+
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka:9092"
+
+          args:
+            - "2000"
+            - "0"

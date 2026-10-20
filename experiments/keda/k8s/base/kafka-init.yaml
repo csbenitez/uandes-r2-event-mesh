@@ -1,0 +1,84 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-init
+  namespace: voltera
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: kafka-init
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: kafka-init
+          image: apache/kafka:3.9.0
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Esperando Kafka..."
+
+              until /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --list > /dev/null 2>&1
+              do
+                echo "Kafka aún no disponible..."
+                sleep 3
+              done
+
+              echo "Kafka disponible. Creando topics..."
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic meter-declarations \
+                --partitions 12 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic energy-measurements \
+                --partitions 6 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic energy-positions \
+                --partitions 6 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic kwh-prices \
+                --partitions 3 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic matching-parameters \
+                --partitions 3 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic energy-matched \
+                --partitions 6 \
+                --replication-factor 1
+
+              echo "Topics creados:"
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --list

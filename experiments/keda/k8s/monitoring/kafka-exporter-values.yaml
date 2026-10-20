@@ -1,0 +1,18 @@
+kafkaServer:
+  - kafka.voltera.svc.cluster.local:9092
+
+prometheus:
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: "5s"
+    additionalLabels:
+      release: monitoring
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 192Mi

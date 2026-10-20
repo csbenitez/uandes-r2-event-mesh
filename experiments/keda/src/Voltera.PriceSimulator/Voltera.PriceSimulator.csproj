@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Voltera.Contracts\Voltera.Contracts.csproj" />
+    <ProjectReference Include="..\Voltera.Messaging\Voltera.Messaging.csproj" />
+  </ItemGroup>
+</Project>

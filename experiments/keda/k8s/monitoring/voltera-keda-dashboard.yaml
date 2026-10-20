@@ -1,0 +1,515 @@
+﻿apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: voltera-keda-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  voltera-keda-experiment.json: |-
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": true,
+      "panels": [
+        {
+          "id": 1,
+          "title": "RÃ©plicas Metering vs HPA deseadas",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "description": "Evidencia del escalamiento horizontal: 0 â†’ N â†’ 0.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 10
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas_available{namespace=\"voltera\",deployment=\"metering-service\"}",
+              "legendFormat": "RÃ©plicas disponibles",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"voltera\",horizontalpodautoscaler=\"keda-hpa-metering-service-scaler\"}",
+              "legendFormat": "HPA deseadas",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Lag consumer group metering-service",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "description": "Debe subir con la carga y regresar a 0.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"metering-service\",topic=\"meter-declarations\"}, 0))",
+              "legendFormat": "Lag total",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Mensajes entrada vs salida",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 8
+          },
+          "description": "Para una prueba limpia de 1.000 eventos, comparar deltas entre inicio y fin.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(kafka_topic_partition_current_offset{topic=\"meter-declarations\"})",
+              "legendFormat": "Entrada: meter-declarations",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "sum(kafka_topic_partition_current_offset{topic=\"energy-measurements\"})",
+              "legendFormat": "Salida: energy-measurements",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Throughput",
+          "type": "timeseries",
+          "gridPos": {
+            "x": 12,
+            "y": 8,
+            "w": 12,
+            "h": 8
+          },
+          "description": "Tasa de publicaciÃ³n y procesamiento.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"meter-declarations\"}[30s]))",
+              "legendFormat": "Entrada msg/s",
+              "refId": "A",
+              "range": true
+            },
+            {
+              "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"energy-measurements\"}[30s]))",
+              "legendFormat": "Salida msg/s",
+              "refId": "B",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "KEDA scaler activo",
+          "type": "stat",
+          "gridPos": {
+            "x": 0,
+            "y": 16,
+            "w": 6,
+            "h": 5
+          },
+          "description": "1 = trigger activo.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(keda_scaler_active{exported_namespace=\"voltera\",scaledObject=\"metering-service-scaler\"})",
+              "legendFormat": "Activo",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Valor mÃ©trico KEDA",
+          "type": "stat",
+          "gridPos": {
+            "x": 6,
+            "y": 16,
+            "w": 6,
+            "h": 5
+          },
+          "description": "Valor observado por el scaler.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(keda_scaler_metrics_value{exported_namespace=\"voltera\",scaledObject=\"metering-service-scaler\"})",
+              "legendFormat": "MÃ©trica",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Gap entrada - salida",
+          "type": "stat",
+          "gridPos": {
+            "x": 12,
+            "y": 16,
+            "w": 6,
+            "h": 5
+          },
+          "description": "En una prueba limpia 1:1 debe terminar en 0; con datos previos usar delta.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(kafka_topic_partition_current_offset{topic=\"meter-declarations\"}) - sum(kafka_topic_partition_current_offset{topic=\"energy-measurements\"})",
+              "legendFormat": "Gap",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "title": "Errores del scaler KEDA (5m)",
+          "type": "stat",
+          "gridPos": {
+            "x": 18,
+            "y": 16,
+            "w": 6,
+            "h": 5
+          },
+          "description": "Debe mantenerse en 0 durante la ejecuciÃ³n.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(keda_scaler_detail_errors_total{exported_namespace=\"voltera\",scaledObject=\"metering-service-scaler\"}[5m]))",
+              "legendFormat": "Errores",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Estado Job AMI",
+          "type": "stat",
+          "gridPos": {
+            "x": 0,
+            "y": 21,
+            "w": 8,
+            "h": 5
+          },
+          "description": "1 = Job AMI completado.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max(kube_job_status_succeeded{namespace=\"voltera\",job_name=~\"ami-load-test.*\"})",
+              "legendFormat": "Succeeded",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "RÃ©plicas mÃ¡ximas observadas",
+          "type": "stat",
+          "gridPos": {
+            "x": 8,
+            "y": 21,
+            "w": 8,
+            "h": 5
+          },
+          "description": "MÃ¡ximo de pods en los Ãºltimos 15 minutos.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 10
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "max_over_time(kube_deployment_status_replicas_available{namespace=\"voltera\",deployment=\"metering-service\"}[15m])",
+              "legendFormat": "MÃ¡ximo",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Lag actual",
+          "type": "stat",
+          "gridPos": {
+            "x": 16,
+            "y": 21,
+            "w": 8,
+            "h": 5
+          },
+          "description": "Criterio final: 0.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto"
+          },
+          "targets": [
+            {
+              "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"metering-service\",topic=\"meter-declarations\"}, 0))",
+              "legendFormat": "Lag",
+              "refId": "A",
+              "range": true
+            }
+          ]
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 41,
+      "tags": [
+        "voltera",
+        "keda",
+        "kafka",
+        "experiment"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Voltera - Experimento KEDA",
+      "uid": "voltera-keda-experiment",
+      "version": 1
+    }
+
